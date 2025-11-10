@@ -124,14 +124,28 @@ jobs:
           echo "Recent application logs:"
           ssh $EC2_USERNAME@$EC2_HOST "sudo journalctl -u todos-app -n 30 --no-pager" || true
           
-          # Try to connect to application
-          echo "Testing HTTP connection..."
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://$EC2_HOST:8000 || echo "000")
+          # Try to connect to application from EC2 itself (localhost)
+          echo "Testing HTTP connection from localhost..."
+          LOCALHOST_CODE=$(ssh $EC2_USERNAME@$EC2_HOST "curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 http://localhost:8000" || echo "000")
+          echo "Localhost response: HTTP $LOCALHOST_CODE"
           
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "✓ Application is healthy! HTTP $HTTP_CODE"
+          # Try to connect from external (GitHub Actions runner)
+          echo "Testing HTTP connection from external..."
+          EXTERNAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://$EC2_HOST:8000 || echo "000")
+          echo "External response: HTTP $EXTERNAL_CODE"
+          
+          if [ "$LOCALHOST_CODE" = "200" ] || [ "$LOCALHOST_CODE" = "302" ]; then
+            echo "✓ Application is responding on localhost! HTTP $LOCALHOST_CODE"
+            
+            if [ "$EXTERNAL_CODE" = "200" ] || [ "$EXTERNAL_CODE" = "302" ]; then
+              echo "✓ Application is accessible externally! HTTP $EXTERNAL_CODE"
+            else
+              echo "⚠ Application runs but not accessible externally (HTTP $EXTERNAL_CODE)"
+              echo "Please ensure port 8000 is open in your EC2 Security Group"
+              echo "To fix: AWS Console → EC2 → Security Groups → Add Inbound Rule for port 8000"
+            fi
           else
-            echo "✗ Application may not be responding properly. HTTP $HTTP_CODE"
+            echo "✗ Application is not responding on localhost. HTTP $LOCALHOST_CODE"
             echo "Please check the logs above for errors"
             exit 1
           fi
