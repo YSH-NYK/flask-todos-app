@@ -17,7 +17,7 @@ def create_app():
     app.register_blueprint(todo_bp)
 
     log = Logger().get_logger()
-    log.info("Flask Todo App started with SQLite")
+    log.info("Flask Todo App started with SQLite3")
 
 # === Global Error Handlers ===
     @app.errorhandler(404)
