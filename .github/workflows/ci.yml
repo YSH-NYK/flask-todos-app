@@ -85,17 +85,32 @@ jobs:
       - name: Health check
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
           echo "Waiting for application to start..."
-          sleep 10
+          sleep 15
           
-          # Check if application is responding
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EC2_HOST || echo "000")
+          # Check service status
+          echo "Checking service status..."
+          ssh $EC2_USERNAME@$EC2_HOST "sudo systemctl status todos-app --no-pager" || true
+          
+          # Check if port 80 is listening
+          echo "Checking if port 80 is listening..."
+          ssh $EC2_USERNAME@$EC2_HOST "sudo netstat -tlnp | grep :80" || echo "Port 80 not listening"
+          
+          # Check application logs
+          echo "Recent application logs:"
+          ssh $EC2_USERNAME@$EC2_HOST "sudo journalctl -u todos-app -n 20 --no-pager" || true
+          
+          # Try to connect to application
+          echo "Testing HTTP connection..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://$EC2_HOST || echo "000")
           
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "Application is healthy! HTTP $HTTP_CODE"
+            echo "✓ Application is healthy! HTTP $HTTP_CODE"
           else
-            echo "Application may not be responding properly. HTTP $HTTP_CODE"
+            echo "✗ Application may not be responding properly. HTTP $HTTP_CODE"
+            echo "Please check the logs above for errors"
             exit 1
           fi
       - name: Clean up SSH key
