@@ -6,6 +6,13 @@ SERVICE_NAME="todos-app"
 
 echo "Starting deployment..."
 
+# Stop nginx if it's running
+if systemctl is-active --quiet nginx; then
+    echo "Stopping nginx..."
+    sudo systemctl stop nginx
+    sudo systemctl disable nginx
+fi
+
 # Stop the service if running
 if systemctl is-active --quiet $SERVICE_NAME; then
     echo "Stopping $SERVICE_NAME service..."
@@ -26,6 +33,9 @@ echo "Copying application files..."
 sudo rsync -av --exclude='venv' --exclude='*.pyc' --exclude='__pycache__' \
     /home/ec2-user/todos-deploy/ $APP_DIR/
 
+# Copy .env file
+sudo cp /home/ec2-user/todos-deploy/.env $APP_DIR/.env
+
 # Set proper ownership
 sudo chown -R ec2-user:ec2-user $APP_DIR
 
@@ -43,7 +53,7 @@ pip install gunicorn
 
 # Set up database
 echo "Setting up database..."
-python -c "from app import db; db.create_all()"
+python -c "from app import db; db.create_all()" || true
 
 # Create systemd service file
 echo "Creating systemd service..."
