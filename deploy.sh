@@ -63,12 +63,12 @@ Description=Flask Todos Application
 After=network.target
 
 [Service]
-Type=simple
+Type=notify
 User=ec2-user
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/venv/bin"
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/venv/bin/gunicorn -w 4 -b 0.0.0.0:80 app:app
+ExecStart=$APP_DIR/venv/bin/gunicorn -w 4 -b 0.0.0.0:8000 app:app --timeout 120
 Restart=always
 RestartSec=10
 
@@ -81,5 +81,19 @@ echo "Starting service..."
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
 sudo systemctl start $SERVICE_NAME
+
+# Wait for service to start and check status
+echo "Waiting for service to start..."
+sleep 5
+
+if systemctl is-active --quiet $SERVICE_NAME; then
+    echo "✓ Service $SERVICE_NAME is running"
+    sudo systemctl status $SERVICE_NAME --no-pager
+else
+    echo "✗ Service $SERVICE_NAME failed to start"
+    echo "Checking logs:"
+    sudo journalctl -u $SERVICE_NAME -n 50 --no-pager
+    exit 1
+fi
 
 echo "Deployment completed successfully!"
