@@ -40,21 +40,32 @@ jobs:
           SECRET_KEY=${{ secrets.SECRET_KEY }}
           SQLALCHEMY_DATABASE_URI=${{ secrets.SQLALCHEMY_DATABASE_URI || 'sqlite:///todos.db' }}
           EOF
+      - name: Clean up old deployment
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          # Remove any existing deployment directory with sudo
+          ssh $EC2_USERNAME@$EC2_HOST "sudo rm -rf /home/ec2-user/todos-deploy || true"
+          
       - name: Copy files to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
-          # Create temporary directory on EC2
+          # Create fresh temporary directory on EC2
           ssh $EC2_USERNAME@$EC2_HOST "mkdir -p /home/ec2-user/todos-deploy"
           
-          # Copy files
-          rsync -avz --exclude='.git' \
+          # Copy files (excluding venv and other unnecessary files)
+          rsync -avz --delete \
+            --exclude='.git' \
             --exclude='.github' \
             --exclude='__pycache__' \
             --exclude='*.pyc' \
             --exclude='.pytest_cache' \
             --exclude='venv' \
+            --exclude='*.db' \
+            --exclude='.env' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ $EC2_USERNAME@$EC2_HOST:/home/ec2-user/todos-deploy/
       - name: Deploy application
@@ -67,9 +78,9 @@ jobs:
             chmod +x deploy.sh
             sudo ./deploy.sh
             
-            # Clean up temporary directory
+            # Clean up temporary directory with sudo to handle permission issues
             cd /home/ec2-user
-            rm -rf todos-deploy
+            sudo rm -rf todos-deploy
           ENDSSH
       - name: Health check
         env:
