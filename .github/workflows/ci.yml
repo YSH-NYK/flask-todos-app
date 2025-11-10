@@ -1,46 +1,38 @@
 name: Deploy Flask Todos App
-
 on:
   push:
     branches:
       - main
       - develop
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Run tests
         run: |
           pytest --verbose
-
   deploy:
     needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
       - name: Create .env file
         run: |
           cat > .env << EOF
@@ -48,14 +40,15 @@ jobs:
           SECRET_KEY=${{ secrets.SECRET_KEY }}
           SQLALCHEMY_DATABASE_URI=${{ secrets.SQLALCHEMY_DATABASE_URI || 'sqlite:///todos.db' }}
           EOF
-
-      - name: Copy files to EC2 (Amazon Linux)
+      - name: Copy files to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USERNAME: ec2-user
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
+          # Create temporary directory on EC2
           ssh $EC2_USERNAME@$EC2_HOST "mkdir -p /home/ec2-user/todos-deploy"
-
+          
+          # Copy files
           rsync -avz --exclude='.git' \
             --exclude='.github' \
             --exclude='__pycache__' \
@@ -64,28 +57,28 @@ jobs:
             --exclude='venv' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ $EC2_USERNAME@$EC2_HOST:/home/ec2-user/todos-deploy/
-
-      - name: Deploy application (Amazon Linux)
+      - name: Deploy application
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USERNAME: ec2-user
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
           ssh $EC2_USERNAME@$EC2_HOST << 'ENDSSH'
             cd /home/ec2-user/todos-deploy
             chmod +x deploy.sh
             sudo ./deploy.sh
-
+            
+            # Clean up temporary directory
             cd /home/ec2-user
             rm -rf todos-deploy
           ENDSSH
-
       - name: Health check
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           echo "Waiting for application to start..."
           sleep 10
-
+          
+          # Check if application is responding
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EC2_HOST || echo "000")
           
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
@@ -94,7 +87,6 @@ jobs:
             echo "Application may not be responding properly. HTTP $HTTP_CODE"
             exit 1
           fi
-
-      # - name: Clean up SSH key
-      #   if: always()
-      #   run: rm -f ~/.ssh/id_rsa
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_rsa
