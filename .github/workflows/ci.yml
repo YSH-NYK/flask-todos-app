@@ -65,18 +65,40 @@ jobs:
             --exclude='.pytest_cache' \
             --exclude='venv' \
             --exclude='*.db' \
-            --exclude='.env' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ $EC2_USERNAME@$EC2_HOST:/home/ec2-user/todos-deploy/
+          
+          # Copy .env file separately
+          scp -o StrictHostKeyChecking=no .env $EC2_USERNAME@$EC2_HOST:/home/ec2-user/todos-deploy/.env
+          
+          # Verify files were copied
+          echo "Verifying deployment files..."
+          ssh $EC2_USERNAME@$EC2_HOST "ls -la /home/ec2-user/todos-deploy/ && test -f /home/ec2-user/todos-deploy/.env && echo '.env file present'"
       - name: Deploy application
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
           ssh $EC2_USERNAME@$EC2_HOST << 'ENDSSH'
+            set -e  # Exit on any error
             cd /home/ec2-user/todos-deploy
+            
+            echo "=== Deployment directory contents ==="
+            ls -la
+            
+            echo "=== Making deploy script executable ==="
             chmod +x deploy.sh
-            sudo ./deploy.sh
+            
+            echo "=== Running deployment script ==="
+            sudo bash -x ./deploy.sh 2>&1 | tee deploy.log
+            
+            echo "=== Deployment script completed ==="
+            
+            echo "=== Checking if service file was created ==="
+            ls -la /etc/systemd/system/todos-app.service || echo "Service file not found!"
+            
+            echo "=== Checking service status after deployment ==="
+            sudo systemctl status todos-app --no-pager || true
             
             # Clean up temporary directory with sudo to handle permission issues
             cd /home/ec2-user

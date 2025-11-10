@@ -33,8 +33,19 @@ echo "Copying application files..."
 sudo rsync -av --exclude='venv' --exclude='*.pyc' --exclude='__pycache__' \
     /home/ec2-user/todos-deploy/ $APP_DIR/
 
-# Copy .env file
-sudo cp /home/ec2-user/todos-deploy/.env $APP_DIR/.env
+# Copy .env file if it exists
+if [ -f /home/ec2-user/todos-deploy/.env ]; then
+    echo "Copying .env file..."
+    sudo cp /home/ec2-user/todos-deploy/.env $APP_DIR/.env
+else
+    echo "Warning: .env file not found in deployment directory"
+    echo "Creating minimal .env file..."
+    sudo tee $APP_DIR/.env > /dev/null <<ENVEOF
+FLASK_ENV=production
+SECRET_KEY=temporary-secret-key-change-in-production
+SQLALCHEMY_DATABASE_URI=sqlite:///todos.db
+ENVEOF
+fi
 
 # Set proper ownership
 sudo chown -R ec2-user:ec2-user $APP_DIR
@@ -63,18 +74,23 @@ Description=Flask Todos Application
 After=network.target
 
 [Service]
-Type=notify
+Type=exec
 User=ec2-user
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/venv/bin"
-EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/venv/bin/gunicorn -w 4 -b 0.0.0.0:8000 app:app --timeout 120
+EnvironmentFile=-$APP_DIR/.env
+ExecStart=$APP_DIR/venv/bin/gunicorn -w 4 -b 0.0.0.0:8000 wsgi:app --timeout 120
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+echo "Service file created. Contents:"
+cat /etc/systemd/system/$SERVICE_NAME.service
 
 # Reload systemd and start service
 echo "Starting service..."
